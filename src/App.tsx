@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useSyncExternalStore } from 'react';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { ToastProvider, useToast } from '@/contexts/ToastContext';
 import LoginScreen from '@/components/LoginScreen';
@@ -7,6 +7,8 @@ import SearchPanel from '@/components/SearchPanel';
 import DataList from '@/components/DataList';
 import CodingPanel from '@/components/CodingPanel';
 import TagModal from '@/components/TagModal';
+import PrivacyPolicy from '@/components/PrivacyPolicy';
+import TermsOfService from '@/components/TermsOfService';
 import { supabase } from '@/lib/supabase';
 import { executeSearch } from '@/services/searchService';
 import { LayoutList, Tags } from 'lucide-react';
@@ -14,6 +16,14 @@ import type {
   Search, ScrapedItem, QualitativeCode, ItemCoding,
   ScrapedItemWithCodes, SearchQuery,
 } from '@/types';
+
+function useHashRoute() {
+  const hash = useSyncExternalStore(
+    (cb) => { window.addEventListener('hashchange', cb); return () => window.removeEventListener('hashchange', cb); },
+    () => window.location.hash,
+  );
+  return hash.replace(/^#\/?/, '/') || '/';
+}
 
 function AppContent() {
   const { user, loading: authLoading } = useAuth();
@@ -275,6 +285,11 @@ function AppContent() {
 }
 
 export default function App() {
+  const route = useHashRoute();
+
+  if (route === '/privacy') return <PrivacyPolicy />;
+  if (route === '/terms') return <TermsOfService />;
+
   return (
     <AuthProvider>
       <ToastProvider>

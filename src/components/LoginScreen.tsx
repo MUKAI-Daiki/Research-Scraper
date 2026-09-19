@@ -63,7 +63,11 @@ export default function LoginScreen() {
         </div>
 
         <p className="text-xs text-slate-500">
-          サインインすることで、あなたの研究データは安全に保存されます。
+          サインインすることで、
+          <a href="#/terms" className="text-accent-400/80 hover:text-accent-300 underline underline-offset-2">利用規約</a>
+          および
+          <a href="#/privacy" className="text-accent-400/80 hover:text-accent-300 underline underline-offset-2">プライバシーポリシー</a>
+          に同意したものとみなされます。
         </p>
       </div>
     </div>
