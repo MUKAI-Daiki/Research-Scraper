@@ -1,3 +1,5 @@
+import { createClient } from "npm:@supabase/supabase-js@2";
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
@@ -347,12 +349,51 @@ async function searchWeb(
 // Main handler
 // ──────────────────────────────────────────────
 
+async function resolveUserId(req: Request): Promise<string | null> {
+  const authHeader = req.headers.get("Authorization");
+  if (!authHeader) return null;
+  try {
+    const admin = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+    );
+    const token = authHeader.replace("Bearer ", "");
+    const { data: { user } } = await admin.auth.getUser(token);
+    return user?.id ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function logApiUsage(
+  userId: string,
+  apiType: "x_api" | "gemini",
+  endpoint: string,
+  resultCount: number,
+): Promise<void> {
+  try {
+    const admin = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+    );
+    await admin.from("api_usage_logs").insert({
+      user_id: userId,
+      api_type: apiType,
+      endpoint,
+      result_count: resultCount,
+    });
+  } catch (err) {
+    console.error("Failed to log API usage:", err);
+  }
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: corsHeaders });
   }
 
   try {
+    const userId = await resolveUserId(req);
     const body = await req.json();
 
     const queryAnd: string[] = Array.isArray(body?.query_and)
@@ -391,36 +432,31 @@ Deno.serve(async (req: Request) => {
       ? (wantsTwitter ? limit - twitterLimit : limit)
       : 0;
 
-    const promises: Promise<SearchResult[]>[] = [];
+    const twitterPromise = wantsTwitter && twitterLimit > 0
+      ? searchTwitter(queryAnd, queryOr, queryNot, twitterLimit).catch(
+          (err) => { console.error("Twitter search failed:", err); return [] as SearchResult[]; },
+        )
+      : Promise.resolve([] as SearchResult[]);
 
-    if (wantsTwitter && twitterLimit > 0) {
-      promises.push(
-        searchTwitter(queryAnd, queryOr, queryNot, twitterLimit).catch(
-          (err) => {
-            console.error("Twitter search failed:", err);
-            return [] as SearchResult[];
-          },
-        ),
-      );
+    const webPromise = wantsWeb && webLimit > 0
+      ? searchWeb(queryAnd, queryOr, queryNot, effectiveWebSources, webLimit).catch(
+          (err) => { console.error("Gemini search failed:", err); return [] as SearchResult[]; },
+        )
+      : Promise.resolve([] as SearchResult[]);
+
+    const [twitterResults, webResults] = await Promise.all([twitterPromise, webPromise]);
+    const merged = [...twitterResults, ...webResults].slice(0, limit);
+
+    if (userId) {
+      const logPromises: Promise<void>[] = [];
+      if (wantsTwitter && twitterLimit > 0) {
+        logPromises.push(logApiUsage(userId, "x_api", "tweets/search/recent", twitterResults.length));
+      }
+      if (wantsWeb && webLimit > 0) {
+        logPromises.push(logApiUsage(userId, "gemini", "generateContent+grounding", webResults.length));
+      }
+      await Promise.all(logPromises);
     }
-
-    if (wantsWeb && webLimit > 0) {
-      promises.push(
-        searchWeb(
-          queryAnd,
-          queryOr,
-          queryNot,
-          effectiveWebSources,
-          webLimit,
-        ).catch((err) => {
-          console.error("Gemini search failed:", err);
-          return [] as SearchResult[];
-        }),
-      );
-    }
-
-    const resultArrays = await Promise.all(promises);
-    const merged = resultArrays.flat().slice(0, limit);
 
     return respond({ results: merged });
   } catch (err) {
