@@ -120,10 +120,10 @@ export default function SearchPanel({ onSearch, searching }: SearchPanelProps) {
             </div>
           </div>
 
-          <div className="flex flex-wrap items-end gap-4">
-            <div>
+          <div className="flex flex-wrap items-end gap-3 sm:gap-4">
+            <div className="w-full sm:w-auto">
               <label className="block text-xs font-medium text-slate-400 mb-1.5">ソース選択</label>
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-1.5 sm:gap-2">
                 {SOURCE_OPTIONS.map(opt => (
                   <label
                     key={opt.key}
@@ -162,7 +162,7 @@ export default function SearchPanel({ onSearch, searching }: SearchPanelProps) {
             <button
               onClick={handleSearch}
               disabled={searching || !hasQuery}
-              className="btn-primary"
+              className="btn-primary w-full sm:w-auto"
             >
               {searching ? (
                 <><Loader2 className="h-4 w-4 animate-spin" />検索中...</>

@@ -1,8 +1,20 @@
 import { useState } from 'react';
-import { LayoutGrid, LayoutList, Search, Download, FileJson, FileSpreadsheet, ExternalLink, Tag, MessageSquare } from 'lucide-react';
+import { LayoutGrid, LayoutList, Search, Download, FileJson, FileSpreadsheet, ExternalLink, Tag, MessageSquare, Shield } from 'lucide-react';
 import type { ScrapedItemWithCodes, QualitativeCode, SourceType } from '@/types';
 import { exportCSV, exportJSON } from '@/utils/export';
 import { safeExternalUrl } from '@/utils/url';
+
+interface AdminLabel {
+  id: string;
+  label_name: string;
+  color_hex: string;
+}
+
+interface AdminComment {
+  id: string;
+  comment_text: string;
+  created_at: string;
+}
 
 interface DataListProps {
   items: ScrapedItemWithCodes[];
@@ -13,6 +25,8 @@ interface DataListProps {
   onTagItem: (id: string) => void;
   onEditMemo: (id: string) => void;
   selectedItemId: string | null;
+  adminLabels?: Map<string, AdminLabel[]>;
+  adminComments?: Map<string, AdminComment[]>;
 }
 
 const SOURCE_CONFIG: Record<SourceType, { label: string; color: string; bg: string }> = {
@@ -25,6 +39,7 @@ const SOURCE_CONFIG: Record<SourceType, { label: string; color: string; bg: stri
 export default function DataList({
   items, codes, activeCodeFilter, onClearCodeFilter,
   onSelectItem, onTagItem, onEditMemo, selectedItemId,
+  adminLabels, adminComments,
 }: DataListProps) {
   const [viewMode, setViewMode] = useState<'card' | 'table'>('card');
   const [quickSearch, setQuickSearch] = useState('');
@@ -45,16 +60,17 @@ export default function DataList({
   const activeCodeName = activeCodeFilter ? codes.find(c => c.id === activeCodeFilter)?.name : null;
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full overflow-hidden">
+      {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-2 pb-3">
-        <div className="relative flex-1 min-w-[180px]">
+        <div className="relative flex-1 min-w-[140px]">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-500" />
           <input
             type="text"
             value={quickSearch}
             onChange={e => setQuickSearch(e.target.value)}
             placeholder="クイック検索..."
-            className="input-field pl-8 py-1.5 text-xs"
+            className="input-field pl-8 py-1.5 text-xs w-full"
           />
         </div>
 
@@ -81,7 +97,7 @@ export default function DataList({
 
         <div className="relative">
           <button onClick={() => setExportOpen(!exportOpen)} className="btn-ghost text-xs">
-            <Download className="h-3.5 w-3.5" /> エクスポート
+            <Download className="h-3.5 w-3.5" /> <span className="hidden sm:inline">エクスポート</span>
           </button>
           {exportOpen && (
             <div className="absolute right-0 top-full mt-1 card border border-slate-700 shadow-xl p-1 w-44 z-10">
@@ -118,6 +134,8 @@ export default function DataList({
               onSelect={() => onSelectItem(item.id)}
               onTag={() => onTagItem(item.id)}
               onMemo={() => onEditMemo(item.id)}
+              labels={adminLabels?.get(item.id)}
+              comments={adminComments?.get(item.id)}
             />
           ))}
         </div>
@@ -152,25 +170,26 @@ export default function DataList({
   );
 }
 
-function CardItem({ item, selected, onSelect, onTag, onMemo }: {
+function CardItem({ item, selected, onSelect, onTag, onMemo, labels, comments }: {
   item: ScrapedItemWithCodes; selected: boolean;
   onSelect: () => void; onTag: () => void; onMemo: () => void;
+  labels?: AdminLabel[]; comments?: AdminComment[];
 }) {
   const src = SOURCE_CONFIG[item.source_type];
   const linkUrl = safeExternalUrl(item.url);
   return (
     <div
       onClick={onSelect}
-      className={`card p-3 cursor-pointer transition-all duration-200
+      className={`card p-3 cursor-pointer transition-all duration-200 overflow-hidden
         ${selected ? 'ring-1 ring-accent-500/50 border-accent-500/30' : 'hover:border-slate-600'}`}
     >
-      <div className="flex items-start gap-3">
+      <div className="flex items-start gap-2 sm:gap-3 min-w-0">
         <span className={`shrink-0 inline-flex items-center px-2 py-0.5 rounded-md border text-[10px] font-medium ${src.bg} ${src.color}`}>
           {src.label}
         </span>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <h3 className="text-sm font-medium text-slate-200 truncate">
+        <div className="flex-1 min-w-0 overflow-hidden">
+          <div className="flex items-center gap-2 min-w-0">
+            <h3 className="text-sm font-medium text-slate-200 truncate min-w-0">
               {item.title || item.author_name}
             </h3>
             {linkUrl && (
@@ -190,11 +209,13 @@ function CardItem({ item, selected, onSelect, onTag, onMemo }: {
             )}
           </div>
           {item.title && item.author_name && (
-            <p className="text-[11px] text-slate-500 mt-0.5">{item.author_name}</p>
+            <p className="text-[11px] text-slate-500 mt-0.5 truncate">{item.author_name}</p>
           )}
-          <p className="text-xs text-slate-400 mt-1.5 line-clamp-3 leading-relaxed">
+          <p className="text-xs text-slate-400 mt-1.5 line-clamp-3 leading-relaxed break-words whitespace-pre-wrap">
             {item.content}
           </p>
+
+          {/* User codes */}
           <div className="flex flex-wrap items-center gap-1.5 mt-2">
             {item.codings.map(c => (
               <span
@@ -206,16 +227,45 @@ function CardItem({ item, selected, onSelect, onTag, onMemo }: {
               </span>
             ))}
           </div>
-          <div className="flex items-center gap-3 mt-2">
+
+          {/* Admin labels */}
+          {labels && labels.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+              {labels.map(l => (
+                <span
+                  key={l.id}
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium border border-dashed"
+                  style={{ backgroundColor: `${l.color_hex}15`, color: l.color_hex, borderColor: `${l.color_hex}50` }}
+                >
+                  <Shield className="h-2.5 w-2.5" />
+                  {l.label_name}
+                </span>
+              ))}
+            </div>
+          )}
+
+          {/* Admin comments */}
+          {comments && comments.length > 0 && (
+            <div className="mt-2 space-y-1">
+              {comments.map(c => (
+                <div key={c.id} className="flex items-start gap-1.5 text-[11px] bg-amber-500/5 border border-amber-500/20 rounded px-2 py-1.5">
+                  <Shield className="h-3 w-3 text-amber-400 shrink-0 mt-0.5" />
+                  <span className="text-amber-200/80 break-words whitespace-pre-wrap min-w-0">{c.comment_text}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="flex items-center gap-2 sm:gap-3 mt-2 flex-wrap">
             <span className="text-[10px] text-slate-600">
               {item.published_at ? new Date(item.published_at).toLocaleDateString('ja-JP') : ''}
             </span>
             <div className="flex-1" />
             <button onClick={e => { e.stopPropagation(); onTag(); }} className="btn-ghost text-[11px] py-0.5 px-1.5">
-              <Tag className="h-3 w-3" /> コード付与
+              <Tag className="h-3 w-3" /> <span className="hidden sm:inline">コード付与</span>
             </button>
             <button onClick={e => { e.stopPropagation(); onMemo(); }} className="btn-ghost text-[11px] py-0.5 px-1.5">
-              <MessageSquare className="h-3 w-3" /> メモ
+              <MessageSquare className="h-3 w-3" /> <span className="hidden sm:inline">メモ</span>
             </button>
           </div>
         </div>

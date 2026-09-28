@@ -83,6 +83,8 @@ function ResearchStudioView({ onShowAdmin }: { onShowAdmin?: () => void }) {
   const [activeCodeFilter, setActiveCodeFilter] = useState<string | null>(null);
   const [tagModalItemId, setTagModalItemId] = useState<string | null>(null);
   const [mobileTab, setMobileTab] = useState<'data' | 'coding'>('data');
+  const [adminLabelsMap, setAdminLabelsMap] = useState<Map<string, { id: string; label_name: string; color_hex: string }[]>>(new Map());
+  const [adminCommentsMap, setAdminCommentsMap] = useState<Map<string, { id: string; comment_text: string; created_at: string }[]>>(new Map());
 
   const itemsWithCodes: ScrapedItemWithCodes[] = items.map(item => ({
     ...item,
@@ -144,9 +146,33 @@ function ResearchStudioView({ onShowAdmin }: { onShowAdmin?: () => void }) {
     else { setItems([]); setCodings([]); }
   }, [activeSearchId, loadItemsForSearch]);
 
+  const loadAdminFeedback = useCallback(async (itemIds: string[]) => {
+    if (itemIds.length === 0) { setAdminLabelsMap(new Map()); setAdminCommentsMap(new Map()); return; }
+    const [labelsRes, commentsRes] = await Promise.all([
+      supabase.from('admin_labels').select('id, item_id, label_name, color_hex').in('item_id', itemIds),
+      supabase.from('admin_comments').select('id, item_id, comment_text, created_at').in('item_id', itemIds).order('created_at', { ascending: true }),
+    ]);
+    const lm = new Map<string, { id: string; label_name: string; color_hex: string }[]>();
+    for (const l of (labelsRes.data || [])) {
+      const arr = lm.get(l.item_id) || [];
+      arr.push({ id: l.id, label_name: l.label_name, color_hex: l.color_hex });
+      lm.set(l.item_id, arr);
+    }
+    setAdminLabelsMap(lm);
+    const cm = new Map<string, { id: string; comment_text: string; created_at: string }[]>();
+    for (const c of (commentsRes.data || [])) {
+      const arr = cm.get(c.item_id) || [];
+      arr.push({ id: c.id, comment_text: c.comment_text, created_at: c.created_at });
+      cm.set(c.item_id, arr);
+    }
+    setAdminCommentsMap(cm);
+  }, []);
+
   useEffect(() => {
-    loadCodings(items.map(i => i.id));
-  }, [items, loadCodings]);
+    const ids = items.map(i => i.id);
+    loadCodings(ids);
+    loadAdminFeedback(ids);
+  }, [items, loadCodings, loadAdminFeedback]);
 
   const handleSearch = async (query: SearchQuery) => {
     setSearching(true);
@@ -258,6 +284,8 @@ function ResearchStudioView({ onShowAdmin }: { onShowAdmin?: () => void }) {
               onTagItem={setTagModalItemId}
               onEditMemo={(id) => { setSelectedItemId(id); setMobileTab('coding'); }}
               selectedItemId={selectedItemId}
+              adminLabels={adminLabelsMap}
+              adminComments={adminCommentsMap}
             />
           </div>
 
@@ -282,6 +310,7 @@ function ResearchStudioView({ onShowAdmin }: { onShowAdmin?: () => void }) {
           codes={codes}
           assignedCodeIds={new Set(tagModalItem.codings.map(c => c.code_id))}
           onToggle={codeId => handleToggleCode(tagModalItem.id, codeId)}
+          onCreateCode={handleCreateCode}
           onClose={() => setTagModalItemId(null)}
         />
       )}
