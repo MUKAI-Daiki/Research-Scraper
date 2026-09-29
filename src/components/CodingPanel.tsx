@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Plus, Palette, Tag, Trash2, Save, Loader2 } from 'lucide-react';
 import type { QualitativeCode, ScrapedItemWithCodes, ItemCoding } from '@/types';
 
@@ -43,12 +43,15 @@ export default function CodingPanel({
     }
   };
 
-  const codeCountMap = new Map<string, number>();
-  items.forEach(item => {
-    item.codings.forEach(c => {
-      codeCountMap.set(c.code_id, (codeCountMap.get(c.code_id) || 0) + 1);
-    });
-  });
+  const codeCountMap = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const item of items) {
+      for (const c of item.codings) {
+        map.set(c.code_id, (map.get(c.code_id) || 0) + 1);
+      }
+    }
+    return map;
+  }, [items]);
 
   return (
     <div className="flex flex-col h-full gap-4">
@@ -77,7 +80,7 @@ export default function CodingPanel({
                 <button
                   key={color}
                   onClick={() => setNewColor(color)}
-                  className={`w-5 h-5 rounded-full border-2 transition-all
+                  className={`w-5 h-5 rounded-full border-2 transition-colors
                     ${color === newColor ? 'border-white scale-110' : 'border-transparent hover:border-slate-500'}`}
                   style={{ backgroundColor: color }}
                 />
@@ -104,7 +107,7 @@ export default function CodingPanel({
             <div
               key={code.id}
               onClick={() => onFilterByCode(activeCodeFilter === code.id ? null : code.id)}
-              className={`flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer transition-all group
+              className={`flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer transition-colors group
                 ${activeCodeFilter === code.id ? 'bg-accent-600/15 ring-1 ring-accent-500/30' : 'hover:bg-brand-800'}`}
             >
               <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: code.color_hex }} />
@@ -143,7 +146,10 @@ function SelectedItemDetail({ item, codes, onToggleCode, onSaveMemo }: {
   onToggleCode: (itemId: string, codeId: string) => Promise<void>;
   onSaveMemo: (codingId: string, memo: string) => Promise<void>;
 }) {
-  const assignedCodeIds = new Set(item.codings.map(c => c.code_id));
+  const assignedCodeIds = useMemo(
+    () => new Set(item.codings.map(c => c.code_id)),
+    [item.codings],
+  );
 
   return (
     <div className="card border border-slate-700/50 p-3 flex-1 flex flex-col min-h-0">
@@ -160,7 +166,7 @@ function SelectedItemDetail({ item, codes, onToggleCode, onSaveMemo }: {
               key={code.id}
               onClick={() => onToggleCode(item.id, code.id)}
               className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium
-                border transition-all duration-200
+                border transition-colors duration-150
                 ${assignedCodeIds.has(code.id)
                   ? 'border-opacity-50 opacity-100'
                   : 'border-transparent opacity-50 hover:opacity-80'}`}

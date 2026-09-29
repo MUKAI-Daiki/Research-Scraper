@@ -31,8 +31,12 @@ export default {
         },
       },
       fontFamily: {
-        sans: ['"Inter"', '"Noto Sans JP"', 'system-ui', '-apple-system', 'sans-serif'],
-        mono: ['"JetBrains Mono"', '"Fira Code"', 'monospace'],
+        sans: [
+          'system-ui', '-apple-system', 'BlinkMacSystemFont',
+          '"Segoe UI"', '"Hiragino Sans"', '"Hiragino Kaku Gothic ProN"',
+          '"Noto Sans JP"', 'Meiryo', 'sans-serif',
+        ],
+        mono: ['ui-monospace', 'SFMono-Regular', '"SF Mono"', 'Menlo', 'Consolas', 'monospace'],
       },
     },
   },

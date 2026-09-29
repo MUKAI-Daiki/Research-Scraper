@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useSyncExternalStore } from 'react';
+import { useState, useEffect, useCallback, useMemo, lazy, Suspense, useSyncExternalStore } from 'react';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { ToastProvider, useToast } from '@/contexts/ToastContext';
 import LoginScreen from '@/components/LoginScreen';
@@ -7,9 +7,6 @@ import SearchPanel from '@/components/SearchPanel';
 import DataList from '@/components/DataList';
 import CodingPanel from '@/components/CodingPanel';
 import TagModal from '@/components/TagModal';
-import AdminConsole from '@/components/AdminConsole';
-import PrivacyPolicy from '@/components/PrivacyPolicy';
-import TermsOfService from '@/components/TermsOfService';
 import { supabase } from '@/lib/supabase';
 import { executeSearch } from '@/services/searchService';
 import { LayoutList, Tags } from 'lucide-react';
@@ -17,6 +14,16 @@ import type {
   Search, ScrapedItem, QualitativeCode, ItemCoding,
   ScrapedItemWithCodes, SearchQuery,
 } from '@/types';
+
+const AdminConsole = lazy(() => import('@/components/AdminConsole'));
+const PrivacyPolicy = lazy(() => import('@/components/PrivacyPolicy'));
+const TermsOfService = lazy(() => import('@/components/TermsOfService'));
+
+const LazyFallback = (
+  <div className="min-h-screen flex items-center justify-center">
+    <div className="w-6 h-6 border-2 border-accent-500 border-t-transparent rounded-full animate-spin" />
+  </div>
+);
 
 function useHashRoute() {
   const hash = useSyncExternalStore(
@@ -57,7 +64,9 @@ function AppContent() {
           adminMode
           onToggleAdmin={() => setShowAdmin(false)}
         />
-        <AdminConsole />
+        <Suspense fallback={LazyFallback}>
+          <AdminConsole />
+        </Suspense>
       </>
     );
   }
@@ -86,19 +95,28 @@ function ResearchStudioView({ onShowAdmin }: { onShowAdmin?: () => void }) {
   const [adminLabelsMap, setAdminLabelsMap] = useState<Map<string, { id: string; label_name: string; color_hex: string }[]>>(new Map());
   const [adminCommentsMap, setAdminCommentsMap] = useState<Map<string, { id: string; comment_text: string; created_at: string }[]>>(new Map());
 
-  const itemsWithCodes: ScrapedItemWithCodes[] = items.map(item => ({
-    ...item,
-    codings: codings.filter(c => c.item_id === item.id),
-  }));
+  const itemsWithCodes = useMemo<ScrapedItemWithCodes[]>(() =>
+    items.map(item => ({
+      ...item,
+      codings: codings.filter(c => c.item_id === item.id),
+    })),
+    [items, codings],
+  );
 
-  const selectedItem = itemsWithCodes.find(i => i.id === selectedItemId) || null;
-  const tagModalItem = itemsWithCodes.find(i => i.id === tagModalItemId);
+  const selectedItem = useMemo(
+    () => itemsWithCodes.find(i => i.id === selectedItemId) || null,
+    [itemsWithCodes, selectedItemId],
+  );
+  const tagModalItem = useMemo(
+    () => itemsWithCodes.find(i => i.id === tagModalItemId),
+    [itemsWithCodes, tagModalItemId],
+  );
 
   const loadSearches = useCallback(async () => {
     if (!user) return;
     const { data, error } = await supabase
       .from('searches')
-      .select('*')
+      .select('id, query_and, query_or, query_not, selected_sources, total_results, created_at')
       .order('created_at', { ascending: false });
     if (error) { addToast('検索履歴の読み込みに失敗しました', 'error'); return; }
     setSearches(data || []);
@@ -211,36 +229,57 @@ function ResearchStudioView({ onShowAdmin }: { onShowAdmin?: () => void }) {
   };
 
   const handleCreateCode = async (name: string, colorHex: string, description: string) => {
-    const { error } = await supabase.from('qualitative_codes').insert({ name, color_hex: colorHex, description });
-    if (error) { addToast('コードの作成に失敗しました', 'error'); return; }
-    await loadCodes();
+    const { data, error } = await supabase
+      .from('qualitative_codes')
+      .insert({ name, color_hex: colorHex, description })
+      .select()
+      .maybeSingle();
+    if (error || !data) { addToast('コードの作成に失敗しました', 'error'); return; }
+    setCodes(prev => [...prev, data as QualitativeCode]);
     addToast(`コード「${name}」を作成しました`, 'success');
   };
 
   const handleDeleteCode = async (id: string) => {
     const { error } = await supabase.from('qualitative_codes').delete().eq('id', id);
     if (error) { addToast('コードの削除に失敗しました', 'error'); return; }
-    await loadCodes();
-    await loadCodings(items.map(i => i.id));
+    setCodes(prev => prev.filter(c => c.id !== id));
+    setCodings(prev => prev.filter(c => c.code_id !== id));
     if (activeCodeFilter === id) setActiveCodeFilter(null);
   };
 
   const handleToggleCode = async (itemId: string, codeId: string) => {
     const existing = codings.find(c => c.item_id === itemId && c.code_id === codeId);
     if (existing) {
+      setCodings(prev => prev.filter(c => c.id !== existing.id));
       const { error } = await supabase.from('item_codings').delete().eq('id', existing.id);
-      if (error) { addToast('コードの解除に失敗しました', 'error'); return; }
+      if (error) {
+        addToast('コードの解除に失敗しました', 'error');
+        await loadCodings(items.map(i => i.id));
+      }
     } else {
-      const { error } = await supabase.from('item_codings').insert({ item_id: itemId, code_id: codeId });
-      if (error) { addToast('コードの付与に失敗しました', 'error'); return; }
+      const code = codes.find(c => c.id === codeId);
+      if (!code) return;
+      const { data, error } = await supabase
+        .from('item_codings')
+        .insert({ item_id: itemId, code_id: codeId })
+        .select()
+        .maybeSingle();
+      if (error || !data) {
+        addToast('コードの付与に失敗しました', 'error');
+        return;
+      }
+      setCodings(prev => [...prev, { ...(data as unknown as ItemCoding), code }]);
     }
-    await loadCodings(items.map(i => i.id));
   };
 
   const handleSaveMemo = async (codingId: string, memo: string) => {
+    setCodings(prev => prev.map(c => c.id === codingId ? { ...c, memo } : c));
     const { error } = await supabase.from('item_codings').update({ memo }).eq('id', codingId);
-    if (error) { addToast('メモの保存に失敗しました', 'error'); return; }
-    await loadCodings(items.map(i => i.id));
+    if (error) {
+      addToast('メモの保存に失敗しました', 'error');
+      await loadCodings(items.map(i => i.id));
+      return;
+    }
     addToast('メモを保存しました', 'success');
   };
 
@@ -321,8 +360,8 @@ function ResearchStudioView({ onShowAdmin }: { onShowAdmin?: () => void }) {
 export default function App() {
   const route = useHashRoute();
 
-  if (route === '/privacy') return <PrivacyPolicy />;
-  if (route === '/terms') return <TermsOfService />;
+  if (route === '/privacy') return <Suspense fallback={LazyFallback}><PrivacyPolicy /></Suspense>;
+  if (route === '/terms') return <Suspense fallback={LazyFallback}><TermsOfService /></Suspense>;
 
   return (
     <AuthProvider>

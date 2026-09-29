@@ -3,7 +3,7 @@ import { supabase } from '@/lib/supabase';
 import { useToast } from '@/contexts/ToastContext';
 import UserDetailView from '@/components/UserDetailView';
 import {
-  Users, Activity, BarChart3, ArrowLeft, ChevronRight,
+  Users, Activity, BarChart3, ChevronRight,
   Twitter, Globe, Calendar, Hash,
 } from 'lucide-react';
 
@@ -43,7 +43,7 @@ export default function AdminConsole() {
     setLoadingUsers(true);
     const { data, error } = await supabase
       .from('profiles')
-      .select('*')
+      .select('id, email, display_name, avatar_url, role, created_at')
       .order('created_at', { ascending: false });
     if (error) {
       addToast('ユーザー一覧の読み込みに失敗しました', 'error');
@@ -55,58 +55,19 @@ export default function AdminConsole() {
 
   const loadStats = useCallback(async () => {
     setLoadingStats(true);
+    const [summaryRes, dailyRes] = await Promise.all([
+      supabase.from('api_usage_summary').select('*'),
+      supabase.from('api_usage_daily').select('*').limit(30),
+    ]);
 
-    const { data: aggData, error: aggError } = await supabase
-      .from('api_usage_logs')
-      .select('api_type, result_count, created_at');
-
-    if (aggError) {
+    if (summaryRes.error || dailyRes.error) {
       addToast('API使用量の読み込みに失敗しました', 'error');
       setLoadingStats(false);
       return;
     }
 
-    const rows = aggData || [];
-
-    const statsMap = new Map<string, UsageStat>();
-    const dailyMap = new Map<string, DailyUsage>();
-
-    for (const row of rows) {
-      const type = row.api_type as string;
-      const count = (row.result_count as number) ?? 0;
-      const createdAt = row.created_at as string;
-      const day = createdAt.slice(0, 10);
-
-      const existing = statsMap.get(type);
-      if (existing) {
-        existing.total_calls += 1;
-        existing.total_results += count;
-        if (!existing.last_used || createdAt > existing.last_used) {
-          existing.last_used = createdAt;
-        }
-      } else {
-        statsMap.set(type, {
-          api_type: type,
-          total_calls: 1,
-          total_results: count,
-          last_used: createdAt,
-        });
-      }
-
-      const dailyKey = `${day}_${type}`;
-      const dailyExisting = dailyMap.get(dailyKey);
-      if (dailyExisting) {
-        dailyExisting.calls += 1;
-        dailyExisting.results += count;
-      } else {
-        dailyMap.set(dailyKey, { day, api_type: type, calls: 1, results: count });
-      }
-    }
-
-    setUsageStats(Array.from(statsMap.values()));
-    setDailyUsage(
-      Array.from(dailyMap.values()).sort((a, b) => b.day.localeCompare(a.day)),
-    );
+    setUsageStats((summaryRes.data || []) as UsageStat[]);
+    setDailyUsage((dailyRes.data || []) as DailyUsage[]);
     setLoadingStats(false);
   }, [addToast]);
 
@@ -132,7 +93,6 @@ export default function AdminConsole() {
   return (
     <div className="min-h-screen bg-brand-950">
       <div className="mx-auto max-w-[1200px] px-4 py-6 space-y-6">
-        {/* Stats cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <StatCard
             icon={<Users className="h-5 w-5" />}
@@ -166,7 +126,6 @@ export default function AdminConsole() {
           />
         </div>
 
-        {/* Daily usage */}
         <section className="card p-5">
           <h2 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
             <BarChart3 className="h-4 w-4 text-accent-400" />
@@ -188,7 +147,7 @@ export default function AdminConsole() {
                   </tr>
                 </thead>
                 <tbody>
-                  {dailyUsage.slice(0, 30).map((d) => (
+                  {dailyUsage.map((d) => (
                     <tr key={`${d.day}_${d.api_type}`} className="border-b border-slate-800/50 hover:bg-brand-900/50">
                       <td className="py-2 px-3 text-slate-300 flex items-center gap-1.5">
                         <Calendar className="h-3 w-3 text-slate-500" />
@@ -207,7 +166,6 @@ export default function AdminConsole() {
           )}
         </section>
 
-        {/* User list */}
         <section className="card p-5">
           <h2 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
             <Users className="h-4 w-4 text-accent-400" />

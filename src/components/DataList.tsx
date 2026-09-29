@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { LayoutGrid, LayoutList, Search, Download, FileJson, FileSpreadsheet, ExternalLink, Tag, MessageSquare, Shield } from 'lucide-react';
 import type { ScrapedItemWithCodes, QualitativeCode, SourceType } from '@/types';
 import { exportCSV, exportJSON } from '@/utils/export';
@@ -45,17 +45,17 @@ export default function DataList({
   const [quickSearch, setQuickSearch] = useState('');
   const [exportOpen, setExportOpen] = useState(false);
 
-  const filtered = items.filter(item => {
-    if (activeCodeFilter) {
-      if (!item.codings.some(c => c.code_id === activeCodeFilter)) return false;
-    }
-    if (quickSearch.trim()) {
-      const q = quickSearch.toLowerCase();
-      const haystack = `${item.title} ${item.content} ${item.author_name}`.toLowerCase();
-      if (!haystack.includes(q)) return false;
-    }
-    return true;
-  });
+  const filtered = useMemo(() => {
+    const q = quickSearch.trim().toLowerCase();
+    return items.filter(item => {
+      if (activeCodeFilter && !item.codings.some(c => c.code_id === activeCodeFilter)) return false;
+      if (q) {
+        const haystack = `${item.title} ${item.content} ${item.author_name}`.toLowerCase();
+        if (!haystack.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [items, activeCodeFilter, quickSearch]);
 
   const activeCodeName = activeCodeFilter ? codes.find(c => c.id === activeCodeFilter)?.name : null;
 
@@ -180,7 +180,7 @@ function CardItem({ item, selected, onSelect, onTag, onMemo, labels, comments }:
   return (
     <div
       onClick={onSelect}
-      className={`card p-3 cursor-pointer transition-all duration-200 overflow-hidden
+      className={`card p-3 cursor-pointer transition-colors duration-150 overflow-hidden
         ${selected ? 'ring-1 ring-accent-500/50 border-accent-500/30' : 'hover:border-slate-600'}`}
     >
       <div className="flex items-start gap-2 sm:gap-3 min-w-0">
@@ -215,20 +215,20 @@ function CardItem({ item, selected, onSelect, onTag, onMemo, labels, comments }:
             {item.content}
           </p>
 
-          {/* User codes */}
-          <div className="flex flex-wrap items-center gap-1.5 mt-2">
-            {item.codings.map(c => (
-              <span
-                key={c.id}
-                className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium"
-                style={{ backgroundColor: `${c.code.color_hex}20`, color: c.code.color_hex, border: `1px solid ${c.code.color_hex}30` }}
-              >
-                {c.code.name}
-              </span>
-            ))}
-          </div>
+          {item.codings.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5 mt-2">
+              {item.codings.map(c => (
+                <span
+                  key={c.id}
+                  className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium"
+                  style={{ backgroundColor: `${c.code.color_hex}20`, color: c.code.color_hex, border: `1px solid ${c.code.color_hex}30` }}
+                >
+                  {c.code.name}
+                </span>
+              ))}
+            </div>
+          )}
 
-          {/* Admin labels */}
           {labels && labels.length > 0 && (
             <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
               {labels.map(l => (
@@ -244,7 +244,6 @@ function CardItem({ item, selected, onSelect, onTag, onMemo, labels, comments }:
             </div>
           )}
 
-          {/* Admin comments */}
           {comments && comments.length > 0 && (
             <div className="mt-2 space-y-1">
               {comments.map(c => (

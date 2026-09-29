@@ -32,7 +32,7 @@ export default function Header({ searches, activeSearchId, onSelectSearch, admin
   const displayName = user?.user_metadata?.full_name || user?.email || '';
 
   return (
-    <header className="sticky top-0 z-40 border-b border-slate-700/50 bg-brand-950/90 backdrop-blur-md">
+    <header className="sticky top-0 z-40 border-b border-slate-700/50 bg-brand-950/95 backdrop-blur-sm">
       <div className="mx-auto flex h-14 max-w-[1600px] items-center gap-3 px-4">
         <div className="flex items-center gap-2 mr-2">
           <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-accent-600/20">
